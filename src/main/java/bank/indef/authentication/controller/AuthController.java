@@ -1,22 +1,18 @@
 package bank.indef.authentication.controller;
 
-import bank.indef.authentication.entity.User;
+import bank.indef.authentication.exception.UnauthorizedException;
+import bank.indef.authentication.model.CreateUserDto;
 import bank.indef.authentication.model.LoginRequest;
 import bank.indef.authentication.model.LoginResponse;
-import bank.indef.authentication.repository.UserRepository;
 import bank.indef.authentication.service.AuthService;
+import jakarta.ws.rs.NotAuthorizedException;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-import java.util.Map;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/auth")
@@ -27,8 +23,25 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
-        String token = authService.login(request.getUsername(), request.getPassword());
+        String token = authService.login(request.getEmail(), request.getPassword());
         return ResponseEntity.ok(new LoginResponse(token));
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<LoginResponse> register(@RequestBody CreateUserDto request) {
+        String token = authService.register(request);
+        return ResponseEntity.ok(new LoginResponse(token));
+    }
+
+    @GetMapping("/logout")
+    @SneakyThrows
+    public ResponseEntity<Boolean> logout(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader ) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+            String token = authorizationHeader.substring(7);
+            return ResponseEntity.ok(authService.logout(auth, token));
+        }
+        throw new UnauthorizedException("Invalid Authorization header");
     }
 }
 

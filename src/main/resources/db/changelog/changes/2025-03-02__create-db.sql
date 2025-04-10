@@ -3,8 +3,19 @@
 --changeset AI:create-table-users
 CREATE TABLE users (
     id UUID PRIMARY KEY,
-    username VARCHAR(100) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
     password TEXT NOT NULL, -- в зашифрованном виде (BCrypt)
-    roles TEXT[],           -- массив ролей, если нужно
     created_at TIMESTAMP DEFAULT now()
+);
+
+--changeset AI:create-table-deleted_tokens
+CREATE TABLE deleted_tokens (
+    id VARCHAR(512) PRIMARY KEY
+);
+
+--changeset AI:create-table-user_role
+CREATE TABLE user_role (
+    id UUID PRIMARY KEY,
+    user_id UUID,
+    role VARCHAR(255)
 );

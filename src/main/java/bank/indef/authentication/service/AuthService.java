@@ -1,37 +1,130 @@
 package bank.indef.authentication.service;
 
 import bank.indef.authentication.config.JwtTokenProvider;
+import bank.indef.authentication.config.KafkaProducer;
+import bank.indef.authentication.entity.DeletedTokens;
 import bank.indef.authentication.entity.User;
-import bank.indef.authentication.model.LoginRequest;
-import bank.indef.authentication.model.LoginResponse;
+import bank.indef.authentication.entity.UserRole;
+import bank.indef.authentication.exception.NotFoundException;
+import bank.indef.authentication.exception.UnauthorizedException;
+import bank.indef.authentication.model.*;
+import bank.indef.authentication.repository.DeletedTokensRepository;
 import bank.indef.authentication.repository.UserRepository;
+import bank.indef.authentication.repository.UserRoleRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.RestTemplate;
-
-import java.util.Map;
-import java.util.Objects;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final DeletedTokensRepository deletedTokensRepository;
+    private final KafkaProducer kafkaProducer;
+    private final UserRoleRepository userRoleRepository;
 
-    public String login(String username, String rawPassword) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+    //private final WebClient webClient;
+    @Value("${user-service.port}")
+    private String portUrl;
+    @Value("${user-service.host}")
+    private String hostUrl;
 
-        if (!Objects.equals(rawPassword, user.getPassword())) {
-            throw new RuntimeException("Invalid password");
+    @SneakyThrows
+    public String login(String email, String rawPassword) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("Incorrect login or password"));
+
+        if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
+            throw new NotFoundException("Incorrect login or password");
         }
 
         return jwtTokenProvider.generateToken(user);
+    }
+
+    public String register(CreateUserDto request) {
+        RegisterDto registerDto = new RegisterDto(request.email(), request.phoneNumber(), request.fullName(), request.passport(), request.roles());
+
+        try {
+//            UserIdDto userIdDto =  webClient.post()
+//                    .uri(uriBuilder -> uriBuilder
+//                            .scheme("http")  // Указываем схему (http/https)
+//                            .host(hostUrl)  // Указываем хост
+//                            .port(portUrl)  // Указываем порт
+//                            .path("/api/users")
+//                            .build())
+//                    .bodyValue(registerDto)
+//                    .retrieve()
+//                    .onStatus(HttpStatusCode::isError, response ->
+//                            response.bodyToMono(String.class).flatMap(body -> {
+//                                log.error("Error with request к AuthService: status={}, body={}", response.statusCode(), body);
+//                                return Mono.error(new WebClientResponseException(
+//                                        response.statusCode().value(),
+//                                        "Error with call AuthService",
+//                                        response.headers().asHttpHeaders(),
+//                                        body.getBytes(),
+//                                        StandardCharsets.UTF_8));
+//                            })
+//                    )
+//                    .bodyToMono(UserIdDto.class)
+//                    .block();
+
+            UserIdDto userIdDto = new UserIdDto(UUID.randomUUID());
+            String encodedPassword = passwordEncoder.encode(request.password());
+            assert userIdDto != null;
+
+            User newUser = new User(userIdDto.userId(), request.email(), encodedPassword);
+
+            for (RoleEnum roleEnum : request.roles()) {
+                UserRole role = new UserRole();
+                role.setRole(roleEnum);
+                role.setUserId(userIdDto.userId());
+                userRoleRepository.save(role); // установит связь user -> role
+            }
+
+            userRepository.save(newUser);
+
+            return jwtTokenProvider.generateToken(newUser);
+        } catch (WebClientResponseException ex) {
+            log.error("Error WebClient: status={}, body={}", ex.getStatusCode(), ex.getResponseBodyAsString());
+            throw ex; // Прокидываем дальше
+        }
+    }
+
+    @SneakyThrows
+    public Boolean logout(Authentication authentication, String token) {
+        UUID userId = jwtTokenProvider.getUserIdFromAuthentication(authentication);
+
+        if (deletedTokensRepository.findById(token).isPresent()) {
+            throw new UnauthorizedException("The user is not authorized");
+        }
+
+        ObjectMapper mapper = new ObjectMapper();
+        Map<String, Object> jsonmap = new HashMap<>();
+        jsonmap.put("deleted_token", token);
+
+        try {
+            String deleted_token = mapper.writeValueAsString(jsonmap);
+            kafkaProducer.sendMessage("BANK.deleted_tokens", deleted_token);
+
+            DeletedTokens deletedToken = DeletedTokens.of(token);
+            deletedTokensRepository.save(deletedToken);
+        } catch (Exception e) {
+            log.error("Не получилось серелизовать токен: {}", token);
+            throw new RuntimeException("Ошибка Серелизации в JSON", e);
+        }
+
+        return true;
     }
 }
