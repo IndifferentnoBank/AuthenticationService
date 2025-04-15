@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 --changeset AI:create-table-deleted_tokens
 CREATE TABLE IF NOT EXISTS deleted_tokens (
-    id VARCHAR(512) PRIMARY KEY
+    id VARCHAR(256) PRIMARY KEY
 );
 
 --changeset AI:create-table-user_role
