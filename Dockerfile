@@ -20,4 +20,4 @@ RUN apt-get update && apt-get install -y wget unzip && \
 RUN gradle build -x test
 
 # Указываем команду для запуска приложения
-ENTRYPOINT ["java", "-jar", "build/libs/auth-0.0.1-SNAPSHOT.jar"]
+ENTRYPOINT ["java", "-jar", "build/libs/authentication-0.0.1-SNAPSHOT.jar"]
