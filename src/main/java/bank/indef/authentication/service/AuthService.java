@@ -1,7 +1,7 @@
 package bank.indef.authentication.service;
 
 import bank.indef.authentication.config.JwtTokenProvider;
-import bank.indef.authentication.config.KafkaProducer;
+//import bank.indef.authentication.config.KafkaProducer;
 import bank.indef.authentication.entity.DeletedTokens;
 import bank.indef.authentication.entity.User;
 import bank.indef.authentication.entity.UserRole;
@@ -32,7 +32,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final DeletedTokensRepository deletedTokensRepository;
-    private final KafkaProducer kafkaProducer;
+    //private final KafkaProducer kafkaProducer;
     private final UserRoleRepository userRoleRepository;
 
     //private final WebClient webClient;
@@ -116,7 +116,7 @@ public class AuthService {
 
         try {
             String deleted_token = mapper.writeValueAsString(jsonmap);
-            kafkaProducer.sendMessage("BANK.deleted_tokens", deleted_token);
+            //kafkaProducer.sendMessage("BANK.deleted_tokens", deleted_token);
 
             DeletedTokens deletedToken = DeletedTokens.of(token);
             deletedTokensRepository.save(deletedToken);
