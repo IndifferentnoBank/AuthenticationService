@@ -16,11 +16,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Mono;
+
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -34,8 +38,8 @@ public class AuthService {
     private final DeletedTokensRepository deletedTokensRepository;
     private final KafkaProducer kafkaProducer;
     private final UserRoleRepository userRoleRepository;
+    private final WebClient webClient;
 
-    //private final WebClient webClient;
     @Value("${user-service.port}")
     private String portUrl;
     @Value("${user-service.host}")
@@ -57,39 +61,39 @@ public class AuthService {
         RegisterDto registerDto = new RegisterDto(request.email(), request.phoneNumber(), request.fullName(), request.passport(), request.roles());
 
         try {
-//            UserIdDto userIdDto =  webClient.post()
-//                    .uri(uriBuilder -> uriBuilder
-//                            .scheme("http")  // Указываем схему (http/https)
-//                            .host(hostUrl)  // Указываем хост
-//                            .port(portUrl)  // Указываем порт
-//                            .path("/api/users")
-//                            .build())
-//                    .bodyValue(registerDto)
-//                    .retrieve()
-//                    .onStatus(HttpStatusCode::isError, response ->
-//                            response.bodyToMono(String.class).flatMap(body -> {
-//                                log.error("Error with request к AuthService: status={}, body={}", response.statusCode(), body);
-//                                return Mono.error(new WebClientResponseException(
-//                                        response.statusCode().value(),
-//                                        "Error with call AuthService",
-//                                        response.headers().asHttpHeaders(),
-//                                        body.getBytes(),
-//                                        StandardCharsets.UTF_8));
-//                            })
-//                    )
-//                    .bodyToMono(UserIdDto.class)
-//                    .block();
+            UserIdDto userIdDto =  webClient.post()
+                    .uri(uriBuilder -> uriBuilder
+                            .scheme("http")  // Указываем схему (http/https)
+                            .host(hostUrl)  // Указываем хост
+                            .port(portUrl)  // Указываем порт
+                            .path("/api/users")
+                            .build())
+                    .bodyValue(registerDto)
+                    .retrieve()
+                    .onStatus(HttpStatusCode::isError, response ->
+                            response.bodyToMono(String.class).flatMap(body -> {
+                                log.error("Error with request к AuthService: status={}, body={}", response.statusCode(), body);
+                                return Mono.error(new WebClientResponseException(
+                                        response.statusCode().value(),
+                                        "Error with call AuthService",
+                                        response.headers().asHttpHeaders(),
+                                        body.getBytes(),
+                                        StandardCharsets.UTF_8));
+                            })
+                    )
+                    .bodyToMono(UserIdDto.class)
+                    .block();
 
-            UserIdDto userIdDto = new UserIdDto(UUID.randomUUID());
+            //UserIdDto userIdDto = new UserIdDto(UUID.randomUUID());
             String encodedPassword = passwordEncoder.encode(request.password());
             assert userIdDto != null;
 
-            User newUser = new User(userIdDto.userId(), request.email(), encodedPassword);
+            User newUser = new User(userIdDto.id(), request.email(), encodedPassword);
 
             for (RoleEnum roleEnum : request.roles()) {
                 UserRole role = new UserRole();
                 role.setRole(roleEnum);
-                role.setUserId(userIdDto.userId());
+                role.setUserId(userIdDto.id());
                 userRoleRepository.save(role); // установит связь user -> role
             }
 
