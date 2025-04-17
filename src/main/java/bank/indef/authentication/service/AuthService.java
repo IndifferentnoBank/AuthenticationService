@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -100,6 +101,59 @@ public class AuthService {
             userRepository.save(newUser);
 
             return jwtTokenProvider.generateToken(newUser);
+        } catch (WebClientResponseException ex) {
+            log.error("Error WebClient: status={}, body={}", ex.getStatusCode(), ex.getResponseBodyAsString());
+            throw ex; // Прокидываем дальше
+        }
+    }
+
+    @SneakyThrows
+    public Void editUserById(Authentication authentication, String token,CreateUserDto request, UUID id) {
+        UUID userId = jwtTokenProvider.getUserIdFromAuthentication(authentication);
+
+        if (deletedTokensRepository.findById(token).isPresent()) {
+            throw new UnauthorizedException("The user is not authorized");
+        }
+
+        User user = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User with not fount"));
+
+        RegisterDto registerDto = new RegisterDto(request.email(), request.phoneNumber(), request.fullName(), request.passport(), request.roles());
+
+        try {
+            UserIdDto userIdDto =  webClient.put()
+                    .uri(uriBuilder -> uriBuilder
+                            .scheme("http")  // Указываем схему (http/https)
+                            .host(hostUrl)  // Указываем хост
+                            .port(portUrl)  // Указываем порт
+                            .path("/api/users/{id}")
+                            .build(id))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .bodyValue(registerDto)
+                    .retrieve()
+                    .onStatus(HttpStatusCode::isError, response ->
+                            response.bodyToMono(String.class).flatMap(body -> {
+                                log.error("Error with request к AuthService: status={}, body={}", response.statusCode(), body);
+                                return Mono.error(new WebClientResponseException(
+                                        response.statusCode().value(),
+                                        "Error with call AuthService",
+                                        response.headers().asHttpHeaders(),
+                                        body.getBytes(),
+                                        StandardCharsets.UTF_8));
+                            })
+                    )
+                    .bodyToMono(UserIdDto.class)
+                    .block();
+
+            //UserIdDto userIdDto = new UserIdDto(UUID.randomUUID());
+            String encodedPassword = passwordEncoder.encode(request.password());
+            assert userIdDto != null;
+
+            user.setEmail(request.email());
+            user.setPassword(encodedPassword);
+
+            userRepository.save(user);
+
+            return null;
         } catch (WebClientResponseException ex) {
             log.error("Error WebClient: status={}, body={}", ex.getStatusCode(), ex.getResponseBodyAsString());
             throw ex; // Прокидываем дальше
